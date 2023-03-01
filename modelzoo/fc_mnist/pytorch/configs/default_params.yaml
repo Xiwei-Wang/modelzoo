@@ -1,0 +1,13 @@
+train_input:
+    to_float16: True
+    shuffle: True
+
+eval_input:
+    to_float16: True
+    shuffle: False
+
+model:
+    to_float16: False
+
+csconfig:
+    use_cbfloat16: False

@@ -1,0 +1,19 @@
+train_input:
+    shuffle: True
+
+eval_input:
+    shuffle: False
+
+model:
+    to_float16: False
+    enable_vts: False
+    share_embedding_weights: True
+    disable_nsp: False
+    mlm_loss_weight: 1.0
+    layer_norm_epsilon: 1.0e-5
+
+optimizer:
+    disable_lr_steps_reset: True
+
+csconfig:
+    use_cbfloat16: False

@@ -1,49 +1,40 @@
-# Copyright 2020 Cerebras Systems.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# Params for FC MNIST model
-description: "FC-MNIST base model params"
-
 train_input:
+    train_path: "../data/train.hdf5"
+    eval_path: "../data/val.hdf5"
+    # 5000, 9950, 10130
+    enc_start: 2500
+    enc_end: 4975
+    dim_half: 5065
     shuffle: True
-    data_dir: './tfds' # Place to store data
-    batch_size: 256
-    num_parallel_calls: 0   # 0 means AUTOTUNE
+    batch_size: 32
 
 model:
-    # Total number of Dense layers
-    # is len(hidden_sizes) + 1
-    hidden_sizes:
-        - 500
-        - 300
-    dropout: 0.2
-    # activation fns supported:
-    # relu, tanh, elu, selu, linear (identity)
-    activation_fn: 'relu'
+    embed_dim: 128 # positional_encoding_d
+    dense_dim: 64
+    num_heads: 8
+
+    share_encoder_decoder_embedding: False
+    mixed_precision: True
+    boundary_casting: False
+    tf_summary: False
 
 optimizer:
-    learning_rate: 0.001
     beta1: 0.9
     beta2: 0.999
-    epsilon: 1.0e-8
+    epsilon: 1.0e-08
+    learning_rate: 0.001
 
+### Cerebras parameters.
 runconfig:
     max_steps: 100000
-    save_summary_steps: 500
+    eval_steps: 187
+    save_summary_steps: 100
     save_checkpoints_steps: 10000
-    keep_checkpoint_max: 2
-    model_dir: 'model_dir'
-    cs_ip:
-    multireplica: False
-    mode: 'train'
+    keep_checkpoint_max: 5
+    tf_random_seed: 1202
+    enable_distributed: False
+    multireplica: True
+
+### CS-specific configurations.
+csconfig:
+    use_cbfloat16: False

@@ -1,76 +1,39 @@
-# Copyright 2022 Cerebras Systems.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""
-Simple FC MNIST model to be used with Estimator
-"""
 import tensorflow as tf
-from tensorflow.keras.layers import Activation, Dense, Dropout, LeakyReLU
 from tensorflow.keras.mixed_precision.experimental import Policy
 
 from modelzoo.common.tf.estimator.cs_estimator_spec import CSEstimatorSpec
 
-NUM_CLASSES = 10
-
+from modelzoo.common.tf.layers.DenseLayer import DenseLayer
+from modelzoo.common.tf.layers.SquaredErrorLayer import SquaredErrorLayer
 
 def build_model(features, labels, mode, params):
     dtype = Policy('mixed_float16', loss_scale=None)
     tf.keras.mixed_precision.experimental.set_policy(dtype)
     tf.keras.backend.set_floatx('float16')
-    if "model" in params:
-        model_params = params['model']
-    else:
-        model_params = params
 
-    dropout_layer = Dropout(model_params['dropout'], dtype=dtype)
-    # Set the default or None
-    if "hidden_sizes" in model_params:
-        # Depth is len(hidden_sizes)
-        model_params["depth"] = len(model_params["hidden_sizes"])
-    else:
-        # same hidden size across dense layers
-        model_params["hidden_sizes"] = [
-            model_params["hidden_size"]
-        ] * model_params["depth"]
+    mixed_precision = params["model"]["mixed_precision"]
+    boundary_casting = params["model"]["boundary_casting"]
+    tf_summary = params["model"]["tf_summary"]
 
-    x = features
-    for hidden_size in model_params['hidden_sizes']:
-        with tf.name_scope("km_disable_scope"):
-            dense_layer = Dense(hidden_size, dtype=dtype)
-        act_layer = Activation(model_params['activation_fn'], dtype=dtype)
-        if isinstance(model_params['activation_fn'], LeakyReLU):
-            # workaround due to TF bug
-            # so that the leaky_relu operation can be float16
-            act_layer = tf.nn.leaky_relu
-        with tf.name_scope("km_disable_scope"):
-            x = dense_layer(x)
-        x = act_layer(x)
-        x = dropout_layer(x, training=(mode == tf.estimator.ModeKeys.TRAIN))
-    with tf.name_scope("km_disable_scope"):
-        # Model has len(hidden_sizes) + 1 Dense layers
-        output_dense_layer = Dense(NUM_CLASSES, dtype=dtype)
-        logits = output_dense_layer(x)
-    losses_per_sample = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        labels=labels, logits=logits,
-    )
-    loss = tf.reduce_mean(input_tensor=losses_per_sample)
+    batch_size = params["train_input"]["batch_size"]
+
+    seq_len_2 = params["train_input"]["dim_half"]-params["train_input"]["enc_end"]
+
+    # (batch_size, 2475) -> (batch_size, 90)
+    dense_layer = DenseLayer(seq_len_2, use_bias=True, trainable=True, dtype=dtype, boundary_casting=boundary_casting, tf_summary=tf_summary)
+    encoder_input = features["encoder_input"]
+    outputs = dense_layer(encoder_input)
+
+    loss_layer = SquaredErrorLayer(boundary_casting=boundary_casting, tf_summary=tf_summary, dtype=tf.float32)
+
+    loss = loss_layer(labels, outputs)
+    loss = tf.reduce_sum(loss)
+    loss = loss / batch_size
     tf.compat.v1.summary.scalar('loss', loss)
-    return loss, logits
-
+    return loss, outputs
 
 def model_fn(features, labels, mode, params):
-    loss, logits = build_model(features, labels, mode, params['model'])
+    loss, outputs = build_model(features, labels, mode, params)
 
     train_op = None
     host_call = None
@@ -98,14 +61,12 @@ def model_fn(features, labels, mode, params):
         )
     elif mode == tf.estimator.ModeKeys.EVAL:
 
-        def build_eval_metric_ops(logits, labels):
+        def build_eval_metric_ops(outputs, labels):
             return {
-                "accuracy": tf.compat.v1.metrics.accuracy(
-                    labels=labels, predictions=tf.argmax(input=logits, axis=1),
-                ),
+                "mse": tf.compat.v1.metrics.mean_squared_error(labels, outputs),
             }
 
-        host_call = (build_eval_metric_ops, [logits, labels])
+        host_call = (build_eval_metric_ops, [outputs, labels])
     else:
         raise ValueError("Only TRAIN and EVAL modes supported")
 

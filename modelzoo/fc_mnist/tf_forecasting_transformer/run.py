@@ -1,27 +1,10 @@
-# Copyright 2022 Cerebras Systems.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""
-Script to train FC MNIST model.
-"""
 import argparse
 import os
 import sys
+import yaml
 
 import tensorflow as tf
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "../../.."))
 from modelzoo.common.tf.estimator.cs_estimator import CerebrasEstimator
 from modelzoo.common.tf.estimator.run_config import CSRunConfig
 from modelzoo.common.tf.estimator.utils import (
@@ -35,14 +18,11 @@ from modelzoo.common.tf.run_utils import (
     save_params,
     update_params_from_args,
 )
-from modelzoo.fc_mnist.tf.data import eval_input_fn, train_input_fn
-from modelzoo.fc_mnist.tf.model import model_fn
-from modelzoo.fc_mnist.tf.utils import (
-    DEFAULT_YAML_PATH,
-    get_custom_stack_params,
-    get_params,
-)
 
+from model import model_fn
+from data import eval_input_fn, train_input_fn
+
+DEFAULT_YAML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs/params.yaml")
 
 def create_arg_parser(default_model_dir):
     """
@@ -136,6 +116,20 @@ def create_arg_parser(default_model_dir):
 
     return parser
 
+def get_params(params_file=DEFAULT_YAML_PATH):
+    with open(params_file, "r") as stream:
+        params = yaml.safe_load(stream)
+    return params
+
+def get_custom_stack_params(params):
+    stack_params = {}
+    if params["runconfig"]["multireplica"]:
+        from cerebras.pb.stack.full_pb2 import FullConfig
+        config = FullConfig()
+        config.target_num_replicas = -1
+        stack_params["config"] = config
+        os.environ["CEREBRAS_CUSTOM_MONITORED_SESSION"] = "True"
+    return stack_params
 
 def validate_params(params):
     # check validate_only/compile_only
@@ -157,7 +151,6 @@ def validate_params(params):
         assert not runconfig_params[
             "multireplica"
         ], "Multi-replica training is only possible on the Cerebras System."
-
 
 def run(
     args, params, model_fn, train_input_fn=None, eval_input_fn=None,
@@ -242,7 +235,6 @@ def run(
         )
         tf.estimator.train_and_evaluate(est, train_spec, eval_spec)
 
-
 def main():
     """
     Main function
@@ -264,7 +256,6 @@ def main():
             train_input_fn=train_input_fn,
             eval_input_fn=eval_input_fn,
         )
-
 
 if __name__ == "__main__":
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)

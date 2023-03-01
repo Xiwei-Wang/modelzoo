@@ -3,6 +3,7 @@ import tensorflow as tf
 import h5py
 import math
 
+
 class generator():
     def __init__(self, file_path):
         self.file_path = file_path
@@ -11,16 +12,20 @@ class generator():
         self.x = self.f[self.keys[0]]
         self.x_shape = self.x.shape[1:]
         # print(self.x.shape) # (1580128, 10130) for training
+
     def __call__(self):
         for i in range(self.x.shape[0]):
             yield self.x[i]
+
     def shape(self):
         return self.x_shape
+
 
 def create_dataset(file_path):
     x_generator = generator(file_path)
     x_shape = x_generator.shape()
-    x_dataset = tf.data.Dataset.from_generator(x_generator, output_types=tf.float32, output_shapes=x_shape)
+    x_dataset = tf.data.Dataset.from_generator(
+        x_generator, output_types=tf.float32, output_shapes=x_shape)
     # f = h5py.File(file_path, 'r')
     # keys = list(f.keys())
     # x = f[keys[0]]
@@ -34,18 +39,26 @@ def create_dataset(file_path):
     # dataset = tf.data.Dataset.zip((x_dataset, y_dataset))
     return x_dataset
 
+
 def preprocess_fn(x, params):
-    compute_dtype = (tf.float16 if params["model"]["mixed_precision"] else tf.float32)
+    compute_dtype = (
+        tf.float16 if params["model"]["mixed_precision"] else tf.float32)
     # always n_channels=1
     # print(x.shape) # (10130,)
     x = x[::2]
     # always normailze=False
-    enc_start = params["train_input"]["enc_start"] # 5000//2
-    enc_end = params["train_input"]["enc_end"] # (10000 - 50)//2
+    enc_start = params["train_input"]["enc_start"]  # 5000//2
+    enc_end = params["train_input"]["enc_end"]  # (10000 - 50)//2
     encoder_input = x[enc_start:enc_end]
     decoder_input = x[enc_end-1:-1]
-    # encoder_input = encoder_input[:, tf.newaxis]
-    # decoder_input = decoder_input[:, tf.newaxis]
+    encoder_input = encoder_input[:, tf.newaxis]
+    decoder_input = decoder_input[:, tf.newaxis]
+
+    # TODO: Value Change
+    embed_dim = params["model"]["embed_dim"]  # 128
+    encoder_input = tf.repeat(encoder_input, embed_dim, axis=-1)
+    decoder_input = tf.repeat(decoder_input, embed_dim, axis=-1)
+
     decoder_target = x[enc_end:]
     features = {}
     features["encoder_input"] = tf.cast(encoder_input, compute_dtype)
@@ -54,15 +67,16 @@ def preprocess_fn(x, params):
     # print(encoder_input.shape, decoder_input.shape, decoder_target.shape) # (2475,) (90,) (90,)
     return features, labels
 
+
 def input_fn(params, mode=tf.estimator.ModeKeys.TRAIN):
     training = mode == tf.estimator.ModeKeys.TRAIN
     input_params = params["train_input"]
     file_path = input_params["train_path"] if training else input_params["eval_path"]
-    
+
     # x_num_chunks = input_params["train_x_num_chunks"] if training else input_params["eval_x_num_chunks"]
 
     dataset = create_dataset(file_path)
-    
+
     dataset = dataset.map(
         lambda x: preprocess_fn(x, params),
         num_parallel_calls=tf.data.experimental.AUTOTUNE
@@ -73,7 +87,7 @@ def input_fn(params, mode=tf.estimator.ModeKeys.TRAIN):
 
     # if training and input_params["shuffle"]:
     #     dataset = dataset.shuffle(buffer_size=tf.data.experimental.AUTOTUNE)
-    
+
     batch_size = (
         input_params.get("train_batch_size")
         if training
@@ -91,8 +105,10 @@ def input_fn(params, mode=tf.estimator.ModeKeys.TRAIN):
 
     return dataset
 
+
 def train_input_fn(params):
     return input_fn(params, mode=tf.estimator.ModeKeys.TRAIN)
+
 
 def eval_input_fn(params):
     return input_fn(params, mode=tf.estimator.ModeKeys.EVAL)

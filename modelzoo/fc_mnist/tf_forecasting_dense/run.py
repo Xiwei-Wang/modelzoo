@@ -5,6 +5,7 @@ import yaml
 
 import tensorflow as tf
 
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../.."))
 from modelzoo.common.tf.estimator.cs_estimator import CerebrasEstimator
 from modelzoo.common.tf.estimator.run_config import CSRunConfig
 from modelzoo.common.tf.estimator.utils import (
